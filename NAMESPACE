@@ -3,7 +3,7 @@
 export(extractDecisionFeatures)
 export(getModelBasedEstimates)
 export(getModelFreeEstimates)
-export(importFromEprime)
+export(importFromEprimeSPSSExport)
 export(importFromPTF)
 export(importFromRawMat)
 export(setupAnalysisTemplates)
