@@ -1,0 +1,16 @@
+Package: levylab.RNA
+Type: Package
+Title: Import And Analyze Risk-And-Ambiguity Experiments
+Version: 0.1.0
+Author: Simon Podhajsky
+Maintainer: Simon Podhajsky <simon.podhajsky@gmail.com>
+Description: For many risk and ambiguity projects, especially the ones that are 
+    the workhorse for the Yale Decision Neuroscience Lab, the process of analysis is 
+    remarkably similar. This package provides blueprints and shortcuts for import 
+    and analysis of the data.
+License: MIT
+Encoding: UTF-8
+LazyData: true
+Depends: R (>= 3.4.0)
+Imports: tidyverse, R.matlab
+RoxygenNote: 6.0.1

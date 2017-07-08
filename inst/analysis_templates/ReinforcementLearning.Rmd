@@ -1,0 +1,141 @@
+# Reinforcement learning
+## Note on terminology
+1. The original data set uses `SP`, short for subjective probability, as the term for the principal input that the subject provides. I changed this in the cold, but I will also refer to `SP` as "rating", which is the term that Hyojung uses.
+2. `currently_reinforced`, Which creates the 2 facets "Reinforced" and "Not reinforced" in the following graphs, refers to the **stimulus as a whole within the phase**. That is, A is "currently reinforced" in all of Acquisition. **There is no special visual distinction for trials that are reinforced,** although I could add one if it would be helpful.
+3. *Stage* refers to the acquisition or reversal as a whole. *Phase* is a portion of either acquisition or reversal that lasts exactly 22 trials, 11 trials for each stimulus.
+
+## Data prep
+
+```{r}
+oldw <- getOption("warn")
+options(warn = -1)
+```
+
+```{r}
+acqTrials = 44
+revTrials = 66
+library(ggplot2)
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(4, 5)
+dataToInclude <- c("decision", "learning", "demographics")
+x <- prepareAll(pilotsToInclude)
+```
+
+```{r}
+source('../scripts/lib/combinePilots.R')
+x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+```
+
+```{r}
+# source('../scripts/addFeatures.R')
+# x <- invisible(addFeatures(x))
+options(warn = oldw)
+```
+
+```{r}
+attach(x)
+num_subjects <- nrow(demographics)
+```
+
+## Compare errors to updates
+
+```{r}
+# Assuming I'm learning the stimuli separately
+rl_stats <- learning %>% group_by(ID, Stimulus) %>% 
+    mutate(error = as.numeric(Reinforced)*100 - SP, delta = lead(SP) - SP) %>% 
+    mutate(currently_reinforced = ifelse((Stage == 'Acq' & Stimulus == 'B') | (Stage=='Rev' & Stimulus == 'A'),
+                                         "Not reinforced", "Reinforced"))
+
+# Assuming I don't see the difference between stimuli
+no_discrimination <- learning %>% group_by(ID) %>% # Treat both stimuli equally by leaving out the grouping by stimulus
+    mutate(error = as.numeric(Reinforced)*100 - SP, delta = lead(SP) - SP)
+```
+
+### Confirm that this works
+
+```{r}
+# confirm that this works right by doing just two subjects at first
+rl_stats %>% filter(ID==2532 | ID==2561)
+```
+
+### Graphs!
+As noted above, the horizontal separation of the graphs separates the stimuli within each phase; each phase is a row.
+
+```{r}
+# Labels
+prediction_error_label <- expression(paste('Prediction error (', feedback[t]-rating[t], ')'))
+rating_shift_label <- expression(paste('Rating shift (', rating[t+1]-rating[t], ')'))
+rating_shift_label_log <- expression(paste('Log of rating shift (', rating[t+1]-rating[t], ')'))
+```
+
+```{r}
+ggplot(data = rl_stats, aes(x = error, y = delta, fill = Stimulus, color = Stimulus)) + 
+    facet_grid(Phase ~ currently_reinforced) + 
+    geom_point(alpha = .3) + geom_smooth(method="lm") +
+    theme_bw() + ggtitle('Rating shift in next same-stimulus trial vs. prediction error') +
+    ylab(rating_shift_label) + xlab(prediction_error_label)
+```
+
+```{r}
+ggplot(data = rl_stats %>% filter(ID == 2561), aes(x = error, y = delta, fill = Stimulus, color = Stimulus)) + 
+    facet_grid(Phase ~ currently_reinforced) + 
+    geom_point(alpha = .3) + #geom_smooth(method="lm") +
+    theme_bw() + ggtitle('Rating shift in next same-stimulus trial vs. prediction error, subject 2561') +
+    ylab(rating_shift_label) + xlab(prediction_error_label)
+```
+
+```{r}
+ggplot(data = no_discrimination, aes(x = error, y = delta)) + facet_grid(Phase ~ .) + 
+    geom_point(alpha=.5) + #geom_smooth() +
+    theme_bw() + ggtitle('Rating shift in next trial of *any* stimulus vs. rating error in current trial') +
+    ylab(rating_shift_label) + xlab(prediction_error_label)
+```
+
+## Distribution of rating shifts
+This is a purely exploratory look into what kinds of shifts subjects have been making in various phases for the different stimuli. This does not offer much insight, except for the fact that as the stage progresses, participants are more likely to stick with their rating.
+
+(What follows are 3 graphs, but they say the same thing, only with different degrees of transparency and scale.)
+
+```{r}
+# Comparison of rating updates for currently reinforced versus currently nonreinforced stimulus by phase
+ggplot(data = rl_stats, aes(x = delta, fill = Stimulus, color = Stimulus)) + facet_grid(Phase ~ currently_reinforced) + 
+    geom_density() + 
+#     geom_histogram(aes(y = ..density..), binwidth=1, alpha = 0.5) + 
+    xlim(-20, 20) + 
+    ggtitle('Rating delta distribution for reinforced vs. non-reinforced stimulus') + 
+    theme_bw()  +
+    ylab('Frequency of rating shift magnitude') + xlab(rating_shift_label)
+```
+
+```{r}
+# Comparison of rating updates for currently reinforced versus currently nonreinforced stimulus by phase
+# (same as above, but overlaid instead of faceted)
+ggplot(data = rl_stats, aes(x = delta, fill = currently_reinforced, color = Stimulus)) + facet_grid(Phase ~ .) + 
+    geom_density(alpha=.3) + 
+    xlim(-25, 25) + 
+    ggtitle('Rating delta distribution for reinforced vs. non-reinforced stimulus (overlaid)') + 
+    theme_bw() +
+    ylab('Frequency of rating shift magnitude') + xlab(rating_shift_label)
+```
+
+```{r}
+# Comparison of rating updates for currently reinforced versus currently nonreinforced stimulus by phase, log scale
+ggplot(data = rl_stats, aes(x = ifelse(delta >= 0, log(delta), -log(-delta)), 
+                            fill = currently_reinforced, color = currently_reinforced)) + 
+    facet_grid(Phase ~ .) + 
+    geom_density(alpha = 0.3) + 
+    ggtitle('Rating delta distribution for reinforced vs. non-reinforced stimulus, log scale') + 
+    theme_bw() +
+    ylab('Frequency of rating shift magnitude') + xlab(rating_shift_label_log)
+```
+
+**Note to self:** should the prediction change be weighted? There's most to learn around the extremes...
+
+## Do better learners get better RL fits?
+Using number of phases with maintained between-stimuli rating difference as a very rough proxy.
+
+```{r}
+# learnProp <- learningFeatures %>% group_by(ID) %>% select(ID, starts_with('learned')) %>% 
+#     gather(phase, learned, -ID) %>% 
+#     summarize(learn_prop = mean(learned))
+```

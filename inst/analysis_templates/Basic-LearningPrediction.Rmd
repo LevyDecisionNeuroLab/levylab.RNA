@@ -1,0 +1,91 @@
+# Predicting learning
+
+```{r}
+library(ggplot2)
+library(broom)
+options(scipen=999, digits=3)
+
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(4, 5)
+dataToInclude <- c('decision', 'learning', 'demographics')
+x <- prepareAll(pilotsToInclude)
+
+source('../scripts/lib/combinePilots.R')
+x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+
+source('../scripts/addFeatures.R')
+x <- addFeatures(x)
+```
+
+```{r}
+attach(x)
+```
+
+## Predicting (Boolean) acquisition and reversal
+We regress on model-free and model-based measures of decision-making separately, as well as on age and the degree of statistical training. Only age turns out to be a good predictor; even when removed, decision-making measures don't predict acquisition and reversal well.
+
+```{r}
+y <- merge(learningFeatures, decisionFeatures) %>% merge(demographics) %>% 
+    select(-LL, -iterations, -message, -income, -ends_with('.A'), -ends_with('.B')) %>%
+    mutate(status=as.factor(status), acquired=learned.Acq2, reversed=learned.Rev3)
+y %>% glimpse()
+```
+
+```{r}
+# logreg of trial properties predicting acquisition
+model.acquired <- glm(acquired ~ risk_prop + ambig_prop + age + stats_training, family = binomial(link = 'logit'), 
+                      data = y)
+# summary(model.choice)
+tidy(model.acquired)
+glance(model.acquired)
+```
+
+```{r}
+model.acquired.mb <- glm(acquired ~ alpha + beta + age + stats_training, family = binomial(link = 'logit'), 
+                      data = y)
+# summary(model.choice)
+tidy(model.acquired.mb)
+glance(model.acquired.mb)
+```
+
+```{r}
+# logreg of trial properties predicting acquisition
+model.reversed <- glm(reversed ~ risk_prop + ambig_prop + age + stats_training, family = binomial(link = 'logit'), 
+                      data = y)
+# summary(model.choice)
+tidy(model.reversed)
+glance(model.reversed)
+```
+
+```{r}
+model.reversed.mb <- glm(reversed ~ alpha + beta + age + stats_training, family = binomial(link = 'logit'), 
+                      data = y)
+# summary(model.choice)
+tidy(model.reversed.mb)
+glance(model.reversed.mb)
+```
+
+### Is age actually a good predictor, or is the result driven by outliers?
+
+```{r}
+options(repr.plot.width=4, repr.plot.height=2)
+ggplot(y, aes(x=age, fill=acquired)) + geom_histogram(binwidth=1.5, alpha=.5, position="identity") + theme_bw()
+ggplot(y, aes(x=age, fill=acquired)) + geom_density(alpha=.5) + theme_bw()
+```
+
+```{r}
+options(repr.plot.width=4, repr.plot.height=2)
+ggplot(y, aes(x=age, fill=reversed)) + geom_histogram(binwidth=1.5, alpha=.5, position="identity") + theme_bw()
+ggplot(y, aes(x=age, fill=reversed)) + geom_density(alpha=.5) + theme_bw()
+```
+
+```{r}
+options(repr.plot.width=4, repr.plot.height=2)
+jitter_and_model <- list(
+    geom_jitter(height=.05, alpha=.5),
+    stat_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE),
+    scale_y_continuous(name=NULL, breaks=c(0, 1), labels=c("0"='No', "1"='Yes'))
+)
+ggplot(y, aes(x = age, y = as.numeric(acquired))) + jitter_and_model + ggtitle('Did the subject successfully acquire?')
+ggplot(y, aes(x = age, y = as.numeric(reversed))) + jitter_and_model + ggtitle('Did the subject successfully reverse?')
+```

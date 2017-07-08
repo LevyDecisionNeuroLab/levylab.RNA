@@ -1,0 +1,125 @@
+```{r}
+library(gridExtra)
+```
+
+```{r}
+library(ggplot2)
+library(broom)
+options(scipen=999, digits=3)
+
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(4, 5)
+dataToInclude <- c('decision', 'learning', 'demographics')
+x <- prepareAll(pilotsToInclude)
+
+source('../scripts/lib/combinePilots.R')
+x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+
+source('../scripts/addFeatures.R')
+x <- addFeatures(x)
+```
+
+```{r}
+attach(x)
+```
+
+```{r}
+num_subjects <- nrow(demographics)
+options(repr.plot.width = 5, repr.plot.height= 0.5 * num_subjects)
+
+timecourse <- ggplot(learning, aes(x = Number, y = SP, color = Stimulus))
+timecourse <- timecourse + geom_line(size = 1) + 
+    facet_wrap(~ ID, ncol = 2) +
+    xlab("Trial number") + ylab("Self-reported subjective probability of reinforcement (%)") +
+    ggtitle("Evolving subjective probabilities, per participant") + theme_bw()
+timecourse
+```
+
+```{r}
+gsub('.+([0-9])$', '\\1', 'learned.Acq2') %>% as.numeric()
+gsub('.+(Acq|Rev)[0-9]$', '\\1', 'learned.Acq2')
+```
+
+```{r}
+phaseToLevel <- function(phaseName) {
+    starter <- ifelse(gsub('.+(Acq|Rev)[0-9]$', '\\1', phaseName) == 'Rev', 2, 0) 
+    withinPhaseNum <- as.numeric(gsub('.+([0-9])$', '\\1', phaseName))
+    return(starter + withinPhaseNum)
+}
+
+reversed_sparkline <- learningFeatures %>% select(ID, starts_with('learned')) %>% 
+    gather(phase, learned, -ID) %>% mutate(phase_num = phaseToLevel(phase))
+head(reversed_sparkline)
+```
+
+```{r}
+options(repr.plot.width = 4, repr.plot.height = 20)
+learning_overview  <- ggplot() + 
+    geom_rect(data = reversed_sparkline, aes(xmin = 22 * (phase_num - 1), xmax = 22 * phase_num,
+                                                    ymin = -30, ymax = 100, fill = learned), alpha = 0.1) +
+    geom_rect(data = reversed_sparkline, aes(xmin = 22 * (phase_num - 1), xmax = 22 * phase_num,
+                                                    ymin = -30, ymax = -10, fill = learned), alpha = 0.8) +
+    geom_line(data = learning, aes(x = Number, y = SP, color = Stimulus), size = 0.5) + 
+    facet_wrap(~ ID, ncol = 1, strip.position = "right") +
+    theme_bw() + 
+    scale_y_continuous(name = "Subjective probability rating (%)", breaks = c(0, 50, 100)) + 
+    scale_x_continuous(name = "Trial number", breaks = c(1, seq(11, 110, by = 22), 110)) +
+    ggtitle("Learning overview") +
+    theme(legend.position="bottom") + theme(strip.background = element_blank(), strip.text = element_blank()) +
+    theme(plot.margin = unit(c(10, 1, 20, 0), "pt"))
+learning_overview
+# acqrev_plot <- ggplot(data = acquired_reversed_long, 
+#                       aes(x = phase, y = factor(ID, levels = rev(levels(ID))), fill = success)) + 
+#     geom_tile() + xlab('Phase') + ylab('Participant') + 
+#     ggtitle('Has the participant acquired / reversed in the given phase?') + 
+#     scale_fill_discrete(name = c()) + guides(fill = guide_legend(reverse = TRUE)) + 
+#     theme_bw() + theme(legend.position="top") 
+```
+
+```{r}
+rna_l <- decision %>% mutate(trialtype = ifelse(al == 0,
+                                           "probability",
+                                           "ambiguity"),
+                        quantity = ifelse(al == 0, p, al)) %>% 
+                 group_by(ID, trialtype, val, quantity) %>% 
+                 summarize(proportion = mean(choice))
+decision_matrix <- rna_l %>% unite(trialq, trialtype, quantity)
+head(decision_matrix)
+```
+
+```{r}
+adjust_trial_label <- function(str) {
+    str <- gsub('^([ap]).+_(0\\.)?(.+)', '\\1.\\3', str)
+    str <- gsub('.1$', '.full', str)
+}
+```
+
+```{r}
+options(repr.plot.width = 3, repr.plot.height = 22)
+decision_overview <- ggplot(data=decision_matrix, aes(x=adjust_trial_label(trialq), y=as.factor(val), fill=proportion)) + 
+    geom_tile() + 
+    facet_wrap(~ ID, shrink = TRUE, ncol = 1, strip.position = "left") + 
+    geom_vline(aes(xintercept = 4.5)) + geom_hline(aes(yintercept = 1.5)) +
+    geom_point(x = 4.5, y=.5, size = 4, color = "red", shape='+') + theme_bw() +
+#     theme(axis.text.x = element_text(angle=45, vjust=0.5), axis.text.y = element_text(size=rel(0.8))) + 
+    theme(axis.text.x = element_text(size=rel(0.8)), axis.text.y = element_text(size=rel(0.8))) + 
+    theme(legend.position="bottom") +
+    scale_y_discrete(position = "right") +
+    theme(plot.margin = unit(c(13, 3, 5, 0), "pt")) +
+    ggtitle('R&A attitude overview') + ylab('Payoff ($)') + 
+    xlab('Trial kind: [a]mbiguous (% occluded) or \n[p]robabilistic (% win chance)')
+decision_overview
+```
+
+## Voila, a sparkline!
+A tad misaligned, but good enough for now...
+
+```{r}
+options(repr.plot.width = 7, repr.plot.height = 20)
+grid.arrange(learning_overview, decision_overview, widths = c(5, 3),
+             nrow = 1) 
+             #layout_matrix = rbind(c(1, 2), c(NA, 2)))
+```
+
+```{r}
+```

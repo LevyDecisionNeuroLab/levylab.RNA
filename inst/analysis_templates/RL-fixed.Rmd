@@ -1,0 +1,410 @@
+---
+title: "Reinfocement learning re-analysis"
+fig_width: 10
+output:
+  html_document:
+    smart: no
+  word_document: default
+fig_height: 10
+---
+# Reinforcement learning
+## Updates since last report
+This time, I'm leading with a comparison of model fits. If you wish to see it a graphical point-by-point display of predictions vs. real ratings, [jump ahead](#Graph-the-fits). It is preceded by an [exploration of the quality of fit](#Starting-simple:-sum-of-sums), as judged by the residual sum of squares for each subject.
+
+[Extracting slopes](#Extracting-slopes) is an attempt to visualize the comparisons that Hyojung was talking about. I'm not sure if I got it right.
+
+## Note on terminology
+1. The original data set uses `SP`, short for subjective probability, as the term for the principal input that the subject provides. I changed this in the labels, but I will also refer to `SP` as "rating", which is the term that Hyojung uses.
+2. `currently_reinforced`, which creates the 2 facets "Reinforced" and "Not reinforced" in the following graphs, refers to the **stimulus as a whole within the phase**. That is, A is "currently reinforced" in all of Acquisition. **There is no special visual distinction for trials that are reinforced,** although I could add one if it would be helpful.
+3. *Stage* refers to the acquisition or reversal as a whole. *Phase* is a portion of either acquisition or reversal that lasts exactly 22 trials, 11 trials for each stimulus.
+4. **Update:** The original Matlab fitting scripts normalize the subject rating to be between 0 and 1. Here, when relevant, I convert the fits to be between 0 and 100, mostly as a way of presenting the data.
+
+## Data prep
+
+```{r}
+library(purrr)
+library(broom)
+library(forcats)
+library(stringr)
+```
+
+```{r}
+oldw <- getOption("warn")
+options(warn = -1)
+```
+
+```{r}
+acqTrials = 44
+revTrials = 66
+library(ggplot2)
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(4, 5)
+dataToInclude <- c("decision", "learning", "demographics")
+x <- prepareAll(pilotsToInclude)
+```
+
+```{r}
+source('../scripts/lib/combinePilots.R')
+x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+```
+
+```{r}
+# source('../scripts/addFeatures.R')
+# x <- invisible(addFeatures(x))
+options(warn = oldw)
+options(repr.plot.width = 10, repr.plot.height = 10)
+options(scipen=999, digits=3)
+```
+
+```{r}
+attach(x)
+num_subjects <- nrow(demographics)
+```
+
+```{r}
+# Load & structure the data
+rl_stats <- learning %>% group_by(ID, Stimulus) %>% 
+    mutate(currently_reinforced = ifelse((Stage == 'Acq' & Stimulus == 'B') | (Stage=='Rev' & Stimulus == 'A'),
+                                         "Not reinforced", "Reinforced"))
+```
+
+## Compare & visualize model fits
+First, we load the best-fit parameters for each subject from a file exported from Matlab (which did the fitting).
+
+(The optimizer ran through 750 parameter combinations for models 1 and 2, and picked the fit with the smallest RSS.)
+
+```{r}
+model0_best <- read.csv('../data/model_output/model_0.csv') %>% mutate(value_initial = 100 * value_initial)
+model1_best <- read.csv('../data/model_output/model_1.csv') %>% rename(learning_rate_decay = decay) %>% 
+    mutate(value_initial = 100 * value_initial)
+model2_best <- read.csv('../data/model_output/model_2.csv') %>% rename(associability_initial = alpha,
+                                                                       weight_allocation = gamma,
+                                                                       scaling_factor = kappa) %>% 
+    mutate(value_initial = 100 * value_initial)
+
+head(model0_best)
+head(model1_best)
+head(model2_best)
+```
+
+### Starting simple: sum of sums
+Since residual sum of squares was obtained by comparison to the same dataset, a simple measure of fit quality is, which model has the lowest sum of RSS?
+
+```{r, fig.width = 5, fig.height = 4}
+rss_sums <- data.frame(model = 0:2,
+                       srss = c(sum(model0_best$rss), sum(model1_best$rss), sum(model2_best$rss)))
+rss_sums
+options(repr.plot.width = 5, repr.plot.height = 4)
+ggplot(rss_sums, aes(model)) + geom_bar(aes(weight = srss)) + theme_bw() + ylab('Sum of residual sums of squares')
+```
+
+It would seem that model 2 did worse than both simple models, but maybe the distribution of the fit quality differs? Let's see:
+
+```{r}
+all_models <- lapply(list(model0_best, model1_best, model2_best), function (x) select(x, subject_id, rss))
+rss_only <- reduce(all_models, function(x, y) merge(x, y, by = 'subject_id', suffixes = paste0(".", 0:1))) %>% rename(rss.2 = rss)
+rss_only <- rss_only %>% gather(model, rss, starts_with('rss')) %>% mutate(model = gsub('rss.', 'model', model)) %>% 
+    mutate(model = fct_recode(model, 
+                              'Model 0: Single learning rate' = 'model0',
+                              'Model 1: Split learning rates, with decay' = 'model1',
+                              'Model 2: Hybrid associability, weighted' = 'model2'))
+```
+
+```{r, fig.width = 10, fig.height = 5}
+options(repr.plot.width = 10, repr.plot.height = 5)
+ggplot(data = rss_only,
+       aes(x = rss, color = model, fill = model)) + 
+    geom_density(alpha = 0.05) + geom_rug(alpha = 0.5) + theme_bw() +
+    ggtitle("Distribution of RSS of each subject's fits, by model") +
+    xlab("Residual sum of squares for subject")
+```
+
+So no, not driven by outliers. Let's look at the within-subject change of RSS in order to see if some models deliver wildly different results than others for particular subjects:
+
+```{r, fig.width = 10, fig.height = 8}
+options(repr.plot.width = 10, repr.plot.height = 8)
+ggplot(data = rss_only,
+       aes(x = model, y = rss, color = as.factor(subject_id), group = as.factor(subject_id))) + 
+    geom_point() + geom_line() + theme_bw() +
+    ggtitle("RSS in each model, by subject") + ylab('Residual sum of squares')
+```
+
+### RSS, now with rankings
+Let's look at this one more time, this time just ranking the within-subject wellness of fit.
+
+```{r}
+rss_ranked_models <- rss_only %>% group_by(subject_id) %>%
+    mutate(rank_models = dense_rank(rss))
+```
+
+```{r, fig.width = 9, fig.height = 6}
+options(repr.plot.width = 9, repr.plot.height = 6)
+ggplot(data = rss_ranked_models,
+#        aes(x = model, y = reorder(rank_models, -rank_models), 
+#            color = as.factor(subject_id), group = as.factor(subject_id))) + 
+       aes(x = model, y = as.factor(subject_id), 
+           color = reorder(rank_models, -rank_models), group = reorder(rank_models, -rank_models))) + 
+    geom_point(size = 3) + theme_bw() +
+    ggtitle('Model fit comparison, ranked within subject (with medals!)') +
+    ylab('Subject ID') + 
+    scale_color_manual(name = "Ranking", guide = guide_legend(reverse = TRUE),
+                         labels = c("3rd", "2nd", "1st"), values = c("darkorange", "grey", "gold"))
+```
+
+And how does each subject do relative to others? Are some subjects just consistently easy to fit and others consistently hard?
+
+```{r, fig.width = 10, fig.height = 6}
+options(repr.plot.width = 10, repr.plot.height = 6)
+rss_ranked_subjects <- rss_only %>% group_by(model) %>%
+    mutate(rank_subjects = dense_rank(rss))
+ggplot(data = rss_ranked_subjects,
+       aes(x = model, y = reorder(rank_subjects, -rank_subjects), 
+           color = as.factor(subject_id), group = as.factor(subject_id))) + 
+    geom_point() + geom_line() + theme_bw() +
+    ggtitle("Relative ranking of subjects by fit, by model") +
+    ylab('Subject rank') + scale_color_discrete(name = "Subject ID")
+```
+
+### Visualize fits
+To do this quickly, we reimplement the objective function that constitutes each model and feed it to data that's separated by subject and by stimulus.
+
+```{r}
+model0_update <- function(data_subset, parameters) {
+    parameters = filter(parameters, subject_id == unique(data_subset$ID))
+    observations <- nrow(data_subset)
+    predicted <- seq_len(observations)
+    for (i in 1:observations) {
+        if (i == 1) {
+            predicted[i] <- parameters$value_initial
+        } else {
+            predicted[i] <- predicted[i - 1] + parameters$learning_rate * (data_subset$Reinforced[i - 1] * 100 - predicted[i - 1])
+        }
+    } 
+    data_subset$model0 <- predicted
+    return(data_subset)
+}
+```
+
+```{r}
+model1_update <- function(data_subset, parameters) {
+    parameters = filter(parameters, subject_id == unique(data_subset$ID))
+    observations <- nrow(data_subset)
+    predicted <- seq_len(observations)
+    for (i in 1:observations) {
+        if (i == 1) {
+            predicted[i] <- parameters$value_initial
+        } else {
+            trials_passed = data_subset$Number[i - 1] - 1 # In original code, decay happens at the end of each loop
+            if (data_subset$Stage[i - 1] == 'Acq') {
+                learning_rate <- parameters$learning_rate_acquisition
+                # parameters$learning_rate_acquisition <- parameters$learning_rate_acquisition * parameters$learning_rate_decay
+            } else {
+                learning_rate <- parameters$learning_rate_reversal
+                trials_passed = ifelse(trials_passed < 44, (data_subset$Number[i] %% 44) - 1, trials_passed - 44)
+                # parameters$learning_rate_reversal <- parameters$learning_rate_reversal * parameters$learning_rate_decay
+            }
+            # decay the learning rate regardless of stimulus
+            learning_rate <- learning_rate * (parameters$learning_rate_decay ^ trials_passed)
+            predicted[i] <- predicted[i - 1] + 
+                learning_rate * (data_subset$Reinforced[i - 1] * 100 - predicted[i - 1])
+        }
+    }
+    data_subset$model1 <- predicted
+    return(data_subset)
+}
+```
+
+```{r}
+model2_update <- function(data_subset, parameters) {
+    parameters = filter(parameters, subject_id == unique(data_subset$ID))
+    observations <- nrow(data_subset)
+    predicted <- seq_len(observations)
+    associability <- seq_len(observations)
+    for (i in 1:observations) {
+        if (i == 1) {
+            associability[i] <- parameters$associability_initial
+            predicted[i] <- parameters$value_initial
+        } else {
+            learning_rate <- 1 / (1 + exp(-parameters$scaling_factor * (associability[i - 1] - 0.5)))
+            TD = data_subset$Reinforced[i - 1] * 100 - predicted[i - 1]
+            
+            associability[i] <- (1 - parameters$weight_allocation) * associability[i - 1] + parameters$weight_allocation * TD
+            predicted[i] <- predicted[i - 1] + learning_rate * TD
+        }
+    } 
+    data_subset$model2 <- round(predicted, 6)
+    return(data_subset)
+}
+```
+
+Now, we use these models, and knowledge of best fits obtained by Matlab and loaded here, to get predictions for each trial.
+
+```{r}
+# cross-checked correctness of computation by checking out innards_by_model{:}{3}.regx for each model. (subjects(3) == 2561)
+rl_stats <- rl_stats %>% 
+    do(model0_update(., model0_best)) %>% 
+    do(model1_update(., model1_best)) %>% 
+    do(model2_update(., model2_best)) %>% 
+    group_by(ID, Stimulus) %>% arrange(ID, Number) 
+rl_stats %>% filter(ID==2561) %>% head(20)
+```
+
+### Graph the fits
+First, let's visualize the entire time course.
+
+```{r}
+library('forcats')
+models_wide <- rl_stats %>% gather(rating_origin, rating, starts_with('model'), SP) %>%
+    mutate(rating_origin = fct_recode(rating_origin, 
+                                      'Model 0: Single learning rate' = 'model0',
+                                      'Model 1: Split learning rates, with decay' = 'model1',
+                                      'Model 2: Hybrid associability, weighted' = 'model2',
+                                      'Actual rating by subject' = 'SP'))
+```
+
+```{r, fig.width = 10, fig.height = 45}
+options(repr.plot.width = 10, repr.plot.height = 45)
+graph_fits <- ggplot(data = models_wide, aes(x = Number, y = rating, color = rating_origin)) + 
+    facet_grid(ID ~ .) + 
+    theme_bw() +
+    theme(legend.position="top") +
+    geom_point(size = 0.8, position = position_dodge(width = 0.5)) + 
+    geom_path(data = models_wide %>% filter(rating_origin == 'Actual rating by subject'), alpha = 0.3, linetype = 2) +
+    ggtitle('Predicted ratings by model vs. actual ratings, by subject') +
+    ylab('Rating (%)') + xlab('Trial #') +
+    scale_color_discrete(name = 'Rating origin', guide = guide_legend(nrow = 2))
+graph_fits
+```
+
+Since each model was fit separately for each stimulus, the visualization makes more sense when the time course separated by stimulus:
+
+```{r, fig.width = 10, fig.height = 45}
+options(repr.plot.width = 10, repr.plot.height = 45)
+graph_fits + facet_grid(ID ~ Stimulus) + 
+    ggtitle('Predicted ratings by model vs. actual ratings, by subject and stimulus') 
+```
+
+## Compare errors to updates
+This section has not been changed since the last update, but see [the feature extraction and comparison to model fits](#Extracting-slopes).
+
+```{r}
+rl_stats <- rl_stats %>%
+    mutate(error = as.numeric(Reinforced)*100 - SP, delta = lead(SP) - SP)
+```
+
+### Confirm that this is computed correctly
+
+```{r}
+# confirm that this works right by doing just two subjects at first
+rl_stats %>% filter(ID==2561) %>% head(30)
+```
+
+### Graphs!
+As noted above, the horizontal separation of the graphs separates the stimuli within each phase; each phase is a row.
+
+```{r}
+# Labels
+prediction_error_label <- expression(paste('Prediction error (', feedback[t]-rating[t], ')'))
+rating_shift_label <- expression(paste('Rating shift (', rating[t+1]-rating[t], ')'))
+rating_shift_label_log <- expression(paste('Log of rating shift (', rating[t+1]-rating[t], ')'))
+```
+
+```{r, fig.width = 10, fig.height = 5}
+options(repr.plot.width = 10, repr.plot.height = 5)
+ggplot(data = rl_stats, aes(x = error, y = delta, fill = Stimulus, color = Stimulus)) + 
+    facet_grid(Phase ~ currently_reinforced) + 
+    geom_point(alpha = .3) + geom_smooth(method="lm") +
+    theme_bw() + ggtitle('Rating shift in next same-stimulus trial vs. prediction error, all subjects') +
+    ylab(rating_shift_label) + xlab(prediction_error_label)
+```
+
+```{r, fig.width = 10, fig.height = 5}
+options(repr.plot.width = 10, repr.plot.height = 5)
+ggplot(data = rl_stats %>% filter(ID == 2561), aes(x = error, y = delta, fill = Stimulus, color = Stimulus)) + 
+    facet_grid(Phase ~ currently_reinforced) + 
+    geom_point(alpha = .3) + #geom_smooth(method="lm") +
+    theme_bw() + ggtitle('Rating shift in next same-stimulus trial vs. prediction error, subject 2561') +
+    ylab(rating_shift_label) + xlab(prediction_error_label)
+```
+
+### Extracting slopes
+Across subjects, the fits of the models above should correspond with the following:
+
+* Learning rate in the simple model (model 0) with  $\Delta{rating} \sim \text{Prediction error}$, without a split by stage
+* Learning rate in the more complex model (model 1) with the same, but split by stage
+* Associability with $\Delta{rating} \sim \left|\text{Prediction error}\right|$
+
+I'll try to extract the slopes with linear models.
+
+```{r}
+model0_slope <- rl_stats %>% ungroup() %>% group_by(ID) %>%
+    do(tidy(lm(delta ~ error, data = .)))
+head(model0_slope)
+
+model1_slope <- rl_stats %>% ungroup() %>% group_by(ID, Stage) %>%
+    do(tidy(lm(delta ~ error, data = .)))
+head(model1_slope)
+
+model2_slope <- rl_stats %>% ungroup() %>% group_by(ID) %>%
+    do(tidy(lm(delta ~ abs(error), data = .)))
+head(model2_slope)
+```
+
+Let's ignore the intercept terms for a now, and extract just the slopes. Then, we can see how they correspond to the best-fit parameters for each subject:
+
+### Model 0
+
+```{r}
+model0_features <- model0_slope %>% filter(term == 'error') %>% select(-term) %>% rename(slope = estimate, subject_id = ID) %>%
+    merge(model0_best, by = 'subject_id')
+head(model0_features)
+```
+
+```{r, fig.width = 10, fig.height = 5}
+options(repr.plot.width = 10, repr.plot.height = 5)
+ggplot(model0_features, aes(x=slope, y=learning_rate)) + theme_bw() + 
+    geom_point() + geom_smooth(method = 'lm') +
+    ggtitle('Model 0: Each subject\'s fitted learning rate vs. slope of trial-by-trial response to prediction error') +
+    ylab('Learning rate') + xlab('Slope of rating shift ~ prediction error')
+# expression(paste('Prediction error (', feedback[t]-rating[t], ')'))
+```
+
+### Model 1
+
+```{r}
+# Reshape the best-fit table for model 1 in order to extract the learning rates for different stages on separate rows
+model1_best_wide <- model1_best %>% gather(Stage, learning_rate, learning_rate_acquisition, learning_rate_reversal) %>% 
+    mutate(Stage = gsub('learning_rate_', '', Stage)) %>%
+    mutate(Stage = str_to_title(substr(Stage, 0, 3)))
+model1_best_wide %>% head()
+```
+
+```{r}
+model1_features <- model1_slope %>% filter(term == 'error') %>% select(-term) %>% rename(slope = estimate, subject_id = ID) %>%
+    merge(model1_best_wide, by = c('subject_id', 'Stage'))
+head(model1_features)
+```
+
+```{r, fig.width = 10, fig.height = 5}
+options(repr.plot.width = 10, repr.plot.height = 5)
+ggplot(model1_features, aes(x=slope, y=learning_rate)) + theme_bw() + 
+    geom_point() + geom_smooth(method = 'lm') + facet_grid(. ~ Stage) +
+    ggtitle('Model 1: Each subject\'s fitted learning rate vs. slope of trial-by-trial response to prediction error, by stage') +
+    ylab('Learning rate') + xlab('Slope of rating shift ~ prediction error')
+```
+
+### Model 2
+
+```{r}
+model2_features <- model2_slope %>% filter(term == 'abs(error)') %>% select(-term) %>% rename(slope = estimate, subject_id = ID) %>%
+    merge(model2_best, by = c('subject_id'))
+head(model2_features)
+```
+
+```{r, fig.width = 10, fig.height = 5}
+options(repr.plot.width = 10, repr.plot.height = 5)
+ggplot(model2_features, aes(x=slope, y=associability_initial)) + theme_bw() + 
+    geom_point() + geom_smooth(method = 'lm') +
+    ggtitle('Model 2: Each subject\'s fitted initial associability vs. slope of trial-by-trial response to prediction error') +
+    ylab('Initial associability') + xlab('Slope of rating shift ~ magnitude of prediction error')
+```

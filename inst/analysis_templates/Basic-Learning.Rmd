@@ -1,0 +1,138 @@
+# Basic reversal learning analysis
+
+```{r}
+acqTrials = 44
+revTrials = 66
+library(ggplot2)
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(4, 5)
+dataToInclude <- c("decision", "learning", "demographics")
+x <- prepareAll(pilotsToInclude)
+```
+
+```{r}
+source('../scripts/lib/combinePilots.R')
+x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+```
+
+```{r}
+source('../scripts/addFeatures.R')
+x <- addFeatures(x)
+```
+
+```{r}
+attach(x)
+num_subjects <- nrow(demographics)
+```
+
+## Individual measures
+
+```{r}
+options(repr.plot.width = 8, repr.plot.height= 1 * num_subjects)
+
+timecourse <- ggplot(learning, aes(x = Number, y = SP, color = Stimulus))
+timecourse <- timecourse + geom_line(size = 1) + 
+    geom_hline(yintercept = 33, linetype = "dotted") +
+    geom_point(aes(y = (Reinforced - .005) * 100), shape = 3) + ylim(0, 100) +
+    facet_grid(ID ~ .) +
+    xlab("Trial number") + ylab("Self-reported subjective probability of reinforcement (%)") +
+    ggtitle("Evolving subjective probabilities, per participant") + theme_bw()
+timecourse
+ggsave("../plots/timecourse.png", timecourse, width = 8, height = 1 * num_subjects)
+```
+
+```{r}
+# Extract measure1 back -- or would it be easier to just getMeasure1?
+measure1 <- learningFeatures %>% select(ID, ends_with('A'), ends_with('B')) %>%
+    gather(phaseStim, phase_mean, -ID) %>% separate(phaseStim, c("Phase", "Stimulus"), sep="\\.")
+head(measure1)
+```
+
+```{r}
+# Missing: error bars, discarded in the measure collation
+g_avg_phase <- ggplot(measure1, aes(x = Phase, y = phase_mean, fill = Stimulus)) + 
+    geom_bar(stat = "identity", position = "dodge") + facet_grid(ID ~ .) + geom_hline(yintercept = 33, linetype = "dotted") +
+#     geom_errorbar(aes(ymin = phase_mean - phase_sd, ymax = phase_mean + phase_sd), position = position_dodge(.9), width = .1) +
+    ylab("Mean subjective probability of reinforcement (%)") + ggtitle("Per-phase mean subjective probability, by participant") +
+    xlab("Phase") + theme_bw()
+g_avg_phase
+ggsave("../plots/per_phase.png", g_avg_phase, width = 8, height = 1 * num_subjects)
+```
+
+```{r}
+acquired_reversed <- learningFeatures %>% select(ID, starts_with('learned'))
+names(acquired_reversed) <-sub("learned.", "", names(acquired_reversed))
+```
+
+```{r}
+# Visualize whether a participant acquired / reversed by difference-of-means Wilcoxon test
+acquired_reversed_long <- acquired_reversed %>% gather(phase, success, -ID) %>% 
+    mutate(ID = factor(ID), success = factor(success, labels = c("No", "Yes")))
+
+options(repr.plot.width = 6, repr.plot.height = 8)
+acqrev_plot <- ggplot(data = acquired_reversed_long, 
+                      aes(x = phase, y = factor(ID, levels = rev(levels(ID))), fill = success)) + 
+    geom_tile() + xlab('Phase') + ylab('Participant') + 
+    ggtitle('Has the participant acquired / reversed in the given phase?') + 
+    scale_fill_discrete(name = c()) + guides(fill = guide_legend(reverse = TRUE)) + 
+    theme_bw() + theme(legend.position="top") 
+acqrev_plot
+ggsave('../plots/acqrev_plot.png', acqrev_plot, width = 6, height = 8)
+```
+
+```{r}
+acquired_reversed_long %>% transmute(phase, success = ifelse(success=="Yes", 1, 0)) %>% 
+    group_by(phase) %>% summarize(percent_learned=mean(success) * 100)
+```
+
+```{r}
+acquired_reversed %>% filter(Acq2==FALSE)
+```
+
+## Group measures
+
+```{r}
+# Group SP averaging
+options(repr.plot.width=8, repr.plot.height=5)
+
+learning_means <- learning %>% filter(!is.na(SP)) %>% group_by(Number, Stimulus, Reinforced) %>% # Should Reinforced be here?
+    summarize(SP_mean = mean(SP), SD = sd(SP), SEM = SD / sqrt(n()), error = SEM)
+
+g_across_eb <- ggplot(learning_means, aes(x = Number, y = SP_mean, color = Stimulus))
+g_across_eb <- g_across_eb + geom_point() + geom_line() +
+    geom_errorbar(aes(ymin = SP_mean - error, ymax = SP_mean + error), position = position_dodge(.9), width = .1) +
+    geom_hline(yintercept = 33, linetype = "dotted") +
+    geom_vline(xintercept = acqTrials, linetype = "dashed") +
+#     geom_line(aes(y = prop_all * 100), linetype = "dashed", color = "black") + 
+#     geom_line(aes(y = prop_per_stim * 100), linetype = "dotted") +
+    geom_point(aes(y = (Reinforced - .005) * 100), shape = 3) + ylim(0, 100) +
+    xlab("Trial number") + ylab("Self-reported subjective probability of reinforcement (%)") +
+    ggtitle("Evolving subjective probabilities, across participants (SEM)") + theme_bw()
+g_across_eb
+ggsave('../plots/timecourse_pooled.png', g_across_eb)
+```
+
+```{r}
+# Box plot requires trial numbers as factors, but then ggplot wants to display all of them -> set a couple to normalize
+number_ticks = 1:max(learning$Number)
+displayed_ticks = ifelse(number_ticks %% 30 == 0, number_ticks, "")
+x_labels = as.list(displayed_ticks)
+names(x_labels) = number_ticks
+x_labels[[1]] = "0"
+
+x_breaks = which(sapply(x_labels, function (x) x != ""))
+```
+
+```{r}
+options(repr.plot.width=10, repr.plot.height=5)
+
+g_boxplot <- ggplot(learning, aes(x = as.factor(Number), y = SP, color = Stimulus)) + 
+    geom_boxplot(outlier.size = .5) +
+    geom_hline(yintercept = 33, linetype = "dotted") +
+    geom_vline(xintercept = acqTrials, linetype = "dashed") +
+    geom_point(aes(y = (Reinforced - .005) * 100), shape = 3) + ylim(0, 100) +
+    xlab("Trial number") + ylab("Self-reported subjective probability of reinforcement (%)") +
+    ggtitle("Evolving subjective probabilities, across participants (box-and-whiskers plots)") + theme_bw() +
+    scale_x_discrete(labels = x_labels, breaks = x_breaks)
+g_boxplot
+```

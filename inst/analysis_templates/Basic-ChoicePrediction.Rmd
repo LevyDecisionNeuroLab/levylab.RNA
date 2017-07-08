@@ -1,0 +1,99 @@
+# Predicting choice
+
+```{r}
+library(ggplot2)
+library(broom)
+library(lme4)
+options(scipen=999, digits=3)
+
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(4, 5)
+dataToInclude <- c('decision', 'ambig_direct', 'cash_pleasure', 'demographics')
+x <- prepareAll(pilotsToInclude)
+
+source('../scripts/lib/combinePilots.R')
+x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+```
+
+## Trial -> choice
+### Fixed effects
+
+```{r}
+# logreg of trial properties predicting choice
+model.choice <- glm(choice ~ ., family = binomial(link = 'logit'), data = select(x$decision, -Q, -ID))
+# summary(model.choice)
+tidy(model.choice) %>% mutate(p.value=round(p.value, 3))
+glance(model.choice)
+```
+
+```{r}
+# with age
+model.choice.age <- glm(choice ~ ., family = binomial(link = 'logit'), 
+                        data = merge(x$decision, x$demographics) %>% select(-Q, -ID, -income))
+tidy(model.choice.age) %>% mutate(p.value=round(p.value, 3))
+glance(model.choice.age)
+```
+
+### Mixed effects
+Using [this approach](https://stats.idre.ucla.edu/r/dae/mixed-effects-logistic-regression/).
+
+```{r}
+model.choice.mixed <- glmer(choice ~ p + al + val + redWins + (1 | ID), 
+                            data = select(x$decision, -Q), 
+                            family = binomial, 
+#                             control = glmerControl(optimizer = "bobyqa"),
+                                nAGQ = 10)
+tidy(model.choice.mixed) %>% mutate(p.value=round(p.value, 3))
+glance(model.choice.mixed)
+print(model.choice.mixed)
+```
+
+```{r}
+model.choice.age.mixed <- glmer(choice ~ p + al + val + redWins + age + gender + stats_training + education + (1 | ID), 
+                                data = merge(x$decision, x$demographics) %>% select(-Q, -income), 
+                                family = binomial, 
+#                             control = glmerControl(optimizer = "bobyqa"),
+                                nAGQ = 10)
+tidy(model.choice.age.mixed) %>% mutate(p.value=round(p.value, 3))
+glance(model.choice.age.mixed)
+print(model.choice.age.mixed)
+```
+
+## Subjective probability estimate
+
+```{r}
+# linreg of (ambiguous) trial properties predicting subjective probability estimate
+model.estimation <- lm(SP ~ reward * ambig, data = x$ambig_direct)
+tidy(model.estimation) %>% mutate(p.value=round(p.value, 3))
+glance(model.estimation)
+# summary(model.estimation)
+```
+
+```{r}
+model.estimation.age <- lm(SP ~ reward * ambig + age + gender + stats_training, data = merge(x$ambig_direct, x$demographics))
+tidy(model.estimation.age) %>% mutate(p.value=round(p.value, 3))
+glance(model.estimation.age)
+```
+
+### Mixed effects
+
+```{r}
+library(nlme)
+# model.estimation.mixed <- lmer(SP ~ reward * ambig + (1 | ID), data = x$ambig_direct)
+model.estimation.mixed <- lme(SP ~ reward * ambig, random = ~ 1 | ID, data = x$ambig_direct)
+tidy(model.estimation.mixed)# %>% mutate(p.value=round(p.value, 3))
+glance(model.estimation.mixed)
+print(model.estimation.mixed)
+anova(model.estimation.mixed)
+```
+
+```{r}
+# model.estimation.age.mixed <- lmer(SP ~ reward * ambig + age + gender + stats_training + (1 | ID), 
+#                                  data = merge(x$ambig_direct, x$demographics))
+model.estimation.age.mixed <- lme(SP ~ reward * ambig + age + gender + stats_training, random = ~ 1 | ID, 
+                                 data = merge(x$ambig_direct, x$demographics))
+tidy(model.estimation.age.mixed) #%>% mutate(p.value=round(p.value, 3))
+glance(model.estimation.age.mixed)
+print(model.estimation.age.mixed)
+anova(model.estimation.age.mixed)
+```

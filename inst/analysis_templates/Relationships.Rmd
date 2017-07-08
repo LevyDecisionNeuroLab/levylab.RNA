@@ -1,0 +1,88 @@
+```{r}
+getwd()
+```
+
+```{r}
+acqTrials = 44
+revTrials = 66
+
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(4, 5)
+dataToInclude <- c("decision", "learning", "demographics")
+x <- prepareAll(pilotsToInclude)
+```
+
+```{r}
+source('../scripts/lib/combinePilots.R')
+x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+```
+
+```{r}
+getwd()
+source('../scripts/addFeatures.R')
+x <- addFeatures(x)
+```
+
+```{r}
+attach(x)
+num_subjects <- nrow(demographics)
+```
+
+# Relationships
+
+```{r}
+allMeasures <- merge(learningFeatures, decisionFeatures) %>% select(-message) %>% merge(demographics %>% select(ID, age))
+head(allMeasures)
+```
+
+## Pulling learning & decision-making together
+
+```{r}
+head(allMeasures)
+```
+
+```{r}
+allMeasures %>% select(ID, risk_prop, ambig_prop, alpha, beta, gamma, LL, iterations, status) %>% filter(abs(gamma)<.1 | abs(gamma) > 20 | beta>3 | alpha<.1 | status!=1)
+```
+
+```{r}
+library(Hmisc)
+decision_cols <- c("risk_prop", "ambig_prop", "ambig_prop_relative", "alpha", "beta", "gamma")
+
+correlations <- rcorr(as.matrix(allMeasures), type = "pearson") %>% tidy() %>% 
+    filter_(.dots = list(~ column1 %in% decision_cols | column2 %in% decision_cols)) %>% 
+    filter(column1 != "ID", column2 != "ID") %>% arrange(p.value)
+```
+
+```{r}
+correlations %>% filter(p.value < .25)
+```
+
+```{r}
+correlations %>% filter(column1 == "beta" | column2 == "beta")
+```
+
+## Correlations within the decision measures
+
+```{r}
+decision_columns <- c('alpha', 'beta', 'risk_prop', 'ambig_prop', 'ambig_prop_relative')
+options(digits=3)
+correlations %>% filter(column1 %in% decision_columns & column2  %in% decision_columns) %>% arrange(column1)
+```
+
+## Correlations between learning and decision measures
+
+```{r}
+# Without "useless" measures
+useless_measures <- c('LL', 'gamma', 'iterations', 'status', paste0('learned.', c('Acq1', 'Acq2', 'Rev1', 'Rev2', 'Rev3')))
+correlations %>% filter((column1 %in% decision_columns & !(column2 %in% decision_columns)) | 
+                        (column2 %in% decision_columns & !(column1 %in% decision_columns))) %>%
+    filter(!(column1 %in% useless_measures) & !(column2 %in% useless_measures))
+```
+
+```{r}
+#### with useless measures
+options(scipen=999, digits=3)
+correlations %>% filter((column1 %in% decision_columns & !(column2 %in% decision_columns)) | 
+                        (column2 %in% decision_columns & !(column1 %in% decision_columns)))
+```

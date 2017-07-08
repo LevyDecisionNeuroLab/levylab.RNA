@@ -1,0 +1,39 @@
+```{r}
+source('../scripts/raw2tidy.R')
+pilotsToInclude <- c(1, 2, 4, 5)
+x <- prepareAll(pilotsToInclude)
+```
+
+```{r}
+source('../scripts/lib/combinePilots.R')
+x <- lapply(x, function (pilot) pilot$demographics)
+# x <- combinePilotData(x, paste0('p', pilotsToInclude), "demographics")
+```
+
+```{r}
+library(psych)
+options(digits=3)
+lapply(x, function(pilot) {
+    describe(pilot %>% select(-ID))
+})
+```
+
+```{r}
+lapply(x, function(pilot) {
+    pilot %>% group_by(gender) %>% summarize(n=n())
+})
+```
+
+```{r}
+lapply(x, function(pilot) {
+    pilot %>% group_by(education) %>% summarize(n=n())
+})
+```
+
+```{r}
+lapply(x, function(pilot) {
+    if ('stats_training' %in% names(pilot)) {
+        pilot %>% group_by(stats_training) %>% summarize(n=n())
+    }
+})
+```
