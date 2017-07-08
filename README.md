@@ -1,21 +1,24 @@
-# RNA-Analysis-Toolbox
-This repository provides the boilerplate for the analysis of risk &amp; ambiguity task, as developed by the Levy Lab.
+# levylab.RNA
+This package provides reusable code for the analysis of risk &amp; ambiguity task data, as developed by the [Yale Decision Neuroscience Lab](http://medicine.yale.edu/lab/decision/).
 
 ## How to use this toolbox
-For now, fork it and re-name it for use with your particular dataset. In the future, hopefully, import it as an R library.
+Simple invoke `library(levylab.RNA)` in your R session or your R code.
+
+### Installation
+1. `install.package('devtools')` 
+2. `library(devtools)`
+3. `devtools::install_github('YaleDecisionNeuro/levylab.RNA')`
 
 ## Expected input
 The analysis scripts in this repository expect a tidy CSV file with particular columns. Here's how you can get it from our current projects:
 
 ### Any task based on PsychTaskFramework
 1. From the root folder of PsychTaskFramework, run `exportTaskData(nameOfYourTask, outputFile)`. The script expects that your data are saved in `tasks/nameOfYourTask/data/`; if they aren't, put them there.
-2. Place the output file in `data/` in your copy of this repository.
-2. Run `preprocess/PsychTaskFramework.R` from this repository on the output file.
+2. Run `importFromPTF(outputFile)`.
 
 ### PsychToolbox-based study of veterans (VA Risk, VA_fMRI_PTB)
-1. Assuming that you run the analysis of created new `fitpar` data files, run `coeffs2csv.m` as `coeffs2csv(pathToFitpars, outputDirectory)`.
-2. Place `choices.csv` in `data/` in your copy of this repository.
-3. Run `preprocess/PTBTask.R` from this repository on the output file.
+1. Get all the raw `.mat` files together in a single directory - let's call it `originDirectory`.
+2. Run `importFromRawMat(file)` on each `.mat` file in the repository, or write a script similar to `R/by_project/MDM.R` that points at `originDirectory` itself.
 
 ### Tasks based on E-Prime
 1. Merge all the .edat2 files in the task folder with E-Merge. (This will require a prior installation of E-Prime, even though you should be able to do this without an activated license.)
@@ -26,7 +29,12 @@ The analysis scripts in this repository expect a tidy CSV file with particular c
 
 ## Functionality
 ### Extract model-free features
+Run `getModelFreeEstimates(decision_data)` on a clean R&A data frame.
 
 ### Compute model-based fits in R with nloptr
-### Compute model-based fits in Matlab with fmincon
+Run `getModelBasedEstimates(decision_data)` on a clean R&A data frame.
 
+### Compute model-based fits in Matlab with fmincon
+1. Save the clean R&A data frame as CSV with `write.csv(clean.df, paste0('clean/', filename), row.names = FALSE)`. 
+2. Locate the matlab files with `system.file("matlab", "fit_matlab_model.m", package = "levylab.RNA")`.
+3. Change the clean choice file location in that file accordingly and run in Matlab.
