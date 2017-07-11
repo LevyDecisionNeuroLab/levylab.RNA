@@ -9,11 +9,13 @@
 setupDataDirectory <- function(directory = NULL) {
   if (is.null(directory)) {
     directory <- getwd()
+  } else {
+    dir.create(directory)
   }
-  dir.create('data')
-  dir.create('data/raw')
-  dir.create('data/clean')
-  dir.create('data/results')
+  dir.create(file.path(directory, 'data'))
+  dir.create(file.path(directory, 'data', 'raw'))
+  dir.create(file.path(directory, 'data', 'clean'))
+  dir.create(file.path(directory, 'data', 'results'))
 }
 
 #' Copy the RMarkdown analysis templates into a directory
