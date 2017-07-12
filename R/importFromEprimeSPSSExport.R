@@ -6,6 +6,8 @@
 #' @return A clean R&A data frame
 #' @export
 importFromEprimeSPSSExport <- function(filename, choiceColumnName = 'choice', discardOriginalColumns = FALSE) {
+  # TODO: Ensure that it's not exported with Unicode? Use readr to detect it.
+  # read.table('file.txt', header = TRUE, sep = '\t', as.is = TRUE, fileEncoding = 'UTF-16LE')
   x <- read.delim(filename, skip = 1)
   x <- mutate(x, payoff = ifelse(BlueValue == 0, RedValue, BlueValue),
               refSide = ifelse(LotterySide == 'Left', 2, 1)) %>%

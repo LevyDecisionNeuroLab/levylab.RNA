@@ -1,0 +1,17 @@
+template:
+  params:
+    bootswatch: journal
+reference:
+- title: Set up project
+  desc:  TBD
+  contents:
+  - starts_with("setup")
+- title: Analyse data
+  desc:  TBD
+  contents:
+  - starts_with("getModel")
+  - extractDecisionFeatures
+- title: Import data
+  desc:  TBD
+  contents:
+  - starts_with("import")

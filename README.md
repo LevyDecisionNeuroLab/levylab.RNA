@@ -1,5 +1,5 @@
 # levylab.RNA
-This package provides reusable code for the analysis of risk &amp; ambiguity task data, as developed by the [Yale Decision Neuroscience Lab](http://medicine.yale.edu/lab/decision/).
+This package provides reusable code for the analysis of risk &amp; ambiguity task data, as developed by the Yale Decision Neuroscience Lab.
 
 ## How to use this toolbox
 Simple invoke `library(levylab.RNA)` in your R session or your R code.
@@ -18,13 +18,13 @@ The analysis scripts in this repository expect a tidy CSV file with particular c
 
 ### PsychToolbox-based study of veterans (VA Risk, VA_fMRI_PTB)
 1. Get all the raw `.mat` files together in a single directory - let's call it `originDirectory`.
-2. Run `importFromRawMat(file)` on each `.mat` file in the repository, or write a script similar to `R/by_project/MDM.R` that points at `originDirectory` itself.
+2. Run `importFromRawMat(file)` on each `.mat` file in the repository.
 
 ### Tasks based on E-Prime
 1. Merge all the .edat2 files in the task folder with E-Merge. (This will require a prior installation of E-Prime, even though you should be able to do this without an activated license.)
 2. Open the newly created merged file with E-DataAid and Save as/Export as "SPSS and StatView".
-3. Read in the exported file with R: `read.table('file.txt', header = TRUE, sep = '\t', as.is = TRUE, fileEncoding = 'UTF-16LE')`. 
-4. Drop the columns that you don't need.
+3. Read in the exported file with R: `importFromEprimeSPSSExport(filename, choiceColumnName = "choice", discardOriginalColumns = FALSE)`.
+4. Drop the columns that you don't need manually, or import with `discardOriginalColumns = FALSE`.
 5. Use or export to CSV as needed.
 
 ## Functionality
