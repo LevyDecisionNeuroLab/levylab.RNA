@@ -10,10 +10,12 @@
 importFromPTF <- function(filename, save = FALSE) {
   # TODO: Fix the 25/75% issue at this point or no?
   # x <- readr::read_csv(filename)
-  x <- readr::read_csv(filename)
-  x <- x %>% dplyr::transmute(ID = subjectId, choice = choseLottery,
-                              p = probs, al = ambigs, val = stakes,
-                              redWins = colors)
+  x <- readr::read_csv(filename, na = c("", "NaN", "NA"))
+  x <- x %>%
+    dplyr::select(subjectId, choseLottery, probs, ambigs, stakes, colors,
+                  starts_with('condition')) %>%
+    dplyr::rename(ID = subjectId, choice = choseLottery, p = probs,
+                  al = ambigs, val = stakes, redWins = colors)
 
   if (save) {
     # FIXME: This shouldn't be handled by the function
