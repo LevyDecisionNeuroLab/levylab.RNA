@@ -9,6 +9,8 @@ Simple invoke `library(levylab.RNA)` in your R session or your R code.
 2. `library(devtools)`
 3. `devtools::install_github('YaleDecisionNeuro/levylab.RNA')`
 
+For extracting model-based features, you will also need to install [nlopt](http://ab-initio.mit.edu/wiki/index.php/NLopt).
+
 ## Expected input
 The analysis scripts in this repository expect a tidy CSV file with particular columns. Here's how you can get it from our current projects:
 
