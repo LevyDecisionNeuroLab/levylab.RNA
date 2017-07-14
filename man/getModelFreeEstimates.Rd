@@ -4,10 +4,12 @@
 \alias{getModelFreeEstimates}
 \title{Estimates risk and ambiguity aversion based on a model-free comparison-based approach}
 \usage{
-getModelFreeEstimates(decision_data)
+getModelFreeEstimates(decision_data, na.rm = TRUE)
 }
 \arguments{
 \item{decision_data}{A clean decision data frame}
+
+\item{na.rm}{Should the mean measures exclude NAs (and thus return non-NA results?)}
 }
 \value{
 A data frame with risk_proportion, ambiguity_proportion and relative_ambiguity_proportion
