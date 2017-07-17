@@ -1,107 +1,108 @@
 # Basic risk & ambiguity analysis
-Including pilots 2, 4, and 5, since their R&A task was the same.
 
-```{r}
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-
+```{r, include=FALSE}
+library(tidyverse)
+library(levylab.RNA)
+library(printr)
 options(scipen=999, digits=3)
+```
 
-source('../scripts/raw2tidy.R')
-pilotsToInclude <- c(2, 4, 5)
-dataToInclude <- c("decision")
-x <- prepareAll(pilotsToInclude)
+## Data prep
+```{r}
+# IMPORT YOUR FILE INTO VARIABLE decision HERE
+# 
+# (This assumes that you have either used one of the import functions to clean
+# up the data into the required format, or cleaned up the data yourself.)
+# 
+# Notes that for Rmarkdown documents, the current working directory is their 
+# actual location.
+decision <- read_csv('../../../RNA_all/2017_SODM/data/clean/decision.csv')
+# decision <- read_csv('data/clean/decision.csv')
+```
 
-source('../scripts/lib/combinePilots.R')
-x <- combinePilots(x, paste0('p', pilotsToInclude), dataToInclude)
+## Feature extraction
+
+At this point, you might wish to relabel the payoffs.
+
+```{r}
+# Group your data into groups on which you want to conduct conduct your analysis.
+# 
+# This will typically be any conditions that you might be dividing the subject 
+# decisions by, as well as subject ID.
+# 
+# Note that if you have many conditions, or if you wish to analyze them in a way
+# that systematically differs across them, you would be best off running this 
+# file separately for each.
+decision <- decision %>% group_by_at(vars(starts_with("condition"), 'ID')) %>% 
+    arrange(.by_group = TRUE)
 ```
 
 ```{r}
-source('../scripts/addFeatures.R')
-x <- addFeatures(x)
+# `do` operates in all the designated groups from the previous step
+initial_parameters <- expand.grid(seq(-2, 2, 1), seq(-3, 3, 2), seq(0.5, 3.5, 1.5))
+mb <- decision %>% 
+  do(getModelBasedEstimates(., initial_parameters))
+# You need installed and set up nlopt from the prerequisites
+mf <- decision %>% 
+  do(getModelFreeEstimates(.))
+decisionFeatures <- dplyr::full_join(mb, mf) 
+# You might have to specify `by` explicitly if you run into problems
 ```
 
-```{r}
-attach(x)
-```
-
-```{r}
-x$decisionFeatures
-```
-
+## Visualization / data analysis
 ### Display choice curves
 
-```{r}
+```{r, include=FALSE}
 # Re-shape data into a longer format for this purpose
+# NOTE: Should reunite conditions into a single column and group by them?
 rna_l <- decision %>% mutate(trialtype = ifelse(al == 0,
                                            "probability",
                                            "ambiguity"),
                         quantity = ifelse(al == 0, p, al)) %>% 
-                 group_by(ID, trialtype, val, quantity) %>% 
-                 summarize(proportion = mean(choice))
+                 group_by(trialtype, val, quantity, add = TRUE) %>% 
+                 summarize(proportion = mean(choice, na.rm = FALSE))
 
 rna_l$quantity[rna_l$quantity == .24] <- .25
+rna_l$quantity[rna_l$quantity == .74] <- .75
 head(rna_l)
 ```
 
 ## Choice curves of all subjects in one graph
 
-```{r}
-options(repr.plot.width=8, repr.plot.height=8)
-subject_all_g = ggplot(rna_l, aes(x = val, y = proportion, color = as.factor(ID))) + geom_line(position=position_dodge(width=1.5)) + 
-    facet_grid(quantity ~ trialtype) + geom_point() + xlab("Lottery payoff ($)") + ylab("Proportion of lotteries chosen") + 
-                            ggtitle("Choice curve, by probability / ambiguity level") + theme_bw()
-subject_all_g
+```{r, echo = FALSE}
+choices_together = ggplot(rna_l %>% filter(condition_payoffKind=='Monetary',
+                                           condition_beneficiary=='Self'), 
+                          aes(x = val, y = proportion, 
+                              color = as.factor(ID))) + 
+  geom_line(position=position_dodge(width=1.5)) + 
+  facet_grid(quantity ~ trialtype) + geom_point() + 
+  xlab("Lottery payoff ($)") + ylab("Proportion of lotteries chosen") + 
+  ggtitle("Choice curve, by probability / ambiguity level") + theme_bw()
+choices_together
 ```
 
-```{r}
+```{r, echo=FALSE, fig.width = 8, fig.height = 20}
 num_subjects <- length(unique(rna_l$ID))
-```
 
-```{r}
-options(repr.plot.width = 8, repr.plot.height = 1 * num_subjects)
-
-subject_all_g2 = ggplot(rna_l, aes(x = val, y = proportion, color = as.factor(quantity))) + geom_line(position=position_dodge(width=0.5)) + 
-    facet_grid(ID ~ trialtype) + geom_point() + xlab("Lottery payoff ($)") + ylab("Proportion of lotteries chosen") + 
-                            ggtitle("Choice curve, by subject") + theme_bw()
-subject_all_g2
-```
-
-## Compare R fits to Matlab fits
-
-```{r}
-matlab <- read.csv('../data/processed/decision_matlab.csv')  %>% rename(ID = id)
-head(matlab)
-head(decisionFeatures)
-```
-
-```{r}
-comparison <- merge(decisionFeatures %>% select(-message),
-                    matlab %>% select(ID, alpha, beta, gamma, exitflag, LL), 
-                    by = 'ID', suffixes=c('.R', '.matlab'))  %>% unique()
-```
-
-It seems that R has log-likelihood results that are closer to 0 more often than Matlab.
-
-```{r}
-comparison  %>% group_by(ID) %>% 
-    mutate(alpha_d = alpha.R - alpha.matlab, 
-           beta_d = beta.R - beta.matlab, 
-           gamma_d = gamma.R - gamma.matlab,
-           LL_d = LL.R - LL.matlab)  %>% 
-    filter(abs(alpha_d) > 0.03 | abs(beta_d) > 0.03)
+choices_separate = ggplot(rna_l %>% filter(condition_payoffKind=='Monetary',
+                                           condition_beneficiary=='Self'), 
+                          aes(x = val, y = proportion, 
+                              color = as.factor(quantity))) + 
+  geom_line(position=position_dodge(width=0.5)) + 
+  facet_grid(ID ~ trialtype) + geom_point() + 
+  xlab("Lottery payoff ($)") + ylab("Proportion of lotteries chosen") + 
+  ggtitle("Choice curve, by subject") + theme_bw()
+choices_separate
 ```
 
 ## Testing stochastic dominance
 It is a violation of stochastic dominance if someone chooses an uncertain option with a given payoff instead of a certain option with that payoff. This should be true regardless of the level of ambiguity or risk. At best, the violation indicates irrationality; at worst, it indicates a failure to understand the task.
 
 ```{r}
-rna_l %>% filter(val==5, proportion > 0)
-rna_l %>% filter(val==5, proportion > 0) %>% group_by(ID) %>% summarize(violations=sum(proportion))
+# rna_l %>% filter(val==5, proportion > 0)
+rna_l %>% filter(val==5, proportion > 0) %>% group_by(ID) %>% 
+  summarize(violations=sum(proportion))
 ```
-
-Should the violators be excluded? Should there be a tolerance for one or two stochastic-dominance violating decisions?
 
 ## Visualizing the decision matrix
 
@@ -121,14 +122,22 @@ The left side of each graph denotes the choices under ambiguity; the right choic
 
 *How to tell the choices are consistent?* One, the closer to the red plus, the darker the plot should be. Two, the gradient should be even, without any sudden jumps back and forth. Three, the bottom horizontal strip that denotes the value of $5 should be all dark, lest there be a violation of stochastic dominance.
 
-```{r}
+```{r, echo=FALSE, fig.height=6, fig.width=8}
 options(repr.plot.width = 10, repr.plot.height = 8)
-ggplot(data=decision_matrix, aes(x=adjust_trial_label(trialq), y=as.factor(val), fill=proportion)) + 
+matrix_graph <- ggplot(data=decision_matrix, aes(x=adjust_trial_label(trialq), y=as.factor(val), fill=proportion)) + 
     geom_tile() + 
-    facet_wrap(~ ID, shrink = TRUE) + 
-    geom_vline(aes(xintercept = 4.5)) + geom_hline(aes(yintercept = 1.5)) +
-    geom_point(x = 4.5, y=.5, size = 4, color = "red", shape='+') +
-    theme(axis.text.x = element_text(angle=45, vjust=0.5)) + 
-    ggtitle('Decision matrix for Pilots 4 and 5') + ylab('Payoff ($)') + 
+    facet_wrap(~ ID, labeller = labeller(ID = function(x) paste('Subject', x))) + 
+    geom_vline(aes(xintercept = 3.5)) + geom_hline(aes(yintercept = 1.5)) +
+    geom_point(x = 3.5, y=.5, size = 4, color = "red", shape='+') +
+    theme_bw() + theme(axis.text.x = element_text(angle=45, vjust=0.5)) + 
+    ggtitle('Decision matrix') + ylab('Payoff ($)') + 
     xlab('Trial kind - [a]mbiguous (% occluded) or [p]robabilistic (% win chance)')
+matrix_graph
+```
+
+Check that each participant has a full set of observations:
+
+```{r, echo=FALSE, fig.height=6, fig.width=8}
+matrix_graph + geom_text(aes(label = count), size = 3, nudge_x = 0.3, nudge_y = -0.3, color = "white") +
+    ggtitle('Decision matrix, with number of observations per cell')
 ```
