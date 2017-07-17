@@ -65,6 +65,7 @@
 <li><code>library(devtools)</code></li>
 <li><code><a href="http://www.rdocumentation.org/packages/devtools/topics/install_github">devtools::install_github('YaleDecisionNeuro/levylab.RNA')</a></code></li>
 </ol>
+<p><strong>For extracting model-based features, you will also need to install <a href="http://ab-initio.mit.edu/wiki/index.php/NLopt">nlopt</a>.</strong></p>
 </div>
 </div>
 <div id="expected-input" class="section level2">
@@ -84,7 +85,7 @@
 <a href="#psychtoolbox-based-study-of-veterans-va-risk-va_fmri_ptb" class="anchor"></a>PsychToolbox-based study of veterans (VA Risk, VA_fMRI_PTB)</h3>
 <ol>
 <li>Get all the raw <code>.mat</code> files together in a single directory - let’s call it <code>originDirectory</code>.</li>
-<li>Run <code><a href="reference/importFromRawMat.html">importFromRawMat(file)</a></code> on each <code>.mat</code> file in the repository, or write a script similar to <code>R/by_project/MDM.R</code> that points at <code>originDirectory</code> itself.</li>
+<li>Run <code><a href="reference/importFromRawMat.html">importFromRawMat(file)</a></code> on each <code>.mat</code> file in the repository.</li>
 </ol>
 </div>
 <div id="tasks-based-on-e-prime" class="section level3">
@@ -93,8 +94,8 @@
 <ol>
 <li>Merge all the .edat2 files in the task folder with E-Merge. (This will require a prior installation of E-Prime, even though you should be able to do this without an activated license.)</li>
 <li>Open the newly created merged file with E-DataAid and Save as/Export as “SPSS and StatView”.</li>
-<li>Read in the exported file with R: <code>read.table('file.txt', header = TRUE, sep = '\t', as.is = TRUE, fileEncoding = 'UTF-16LE')</code>.</li>
-<li>Drop the columns that you don’t need.</li>
+<li>Read in the exported file with R: <code><a href="reference/importFromEprimeSPSSExport.html">importFromEprimeSPSSExport(filename, choiceColumnName = "choice", discardOriginalColumns = FALSE)</a></code>.</li>
+<li>Drop the columns that you don’t need manually, or import with <code>discardOriginalColumns = FALSE</code>.</li>
 <li>Use or export to CSV as needed.</li>
 </ol>
 </div>

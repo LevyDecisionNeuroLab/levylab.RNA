@@ -82,7 +82,7 @@
     <p>Estimates risk and ambiguity aversion based on a model-free comparison-based approach</p>
     
 
-    <pre class="usage"><span class='fu'>getModelFreeEstimates</span>(<span class='no'>decision_data</span>)</pre>
+    <pre class="usage"><span class='fu'>getModelFreeEstimates</span>(<span class='no'>decision_data</span>, <span class='kw'>na.rm</span> <span class='kw'>=</span> <span class='fl'>TRUE</span>)</pre>
     
     <h2 class="hasAnchor" id="arguments"><a class="anchor" href="#arguments"></a> Arguments</h2>
     <table class="ref-arguments">
@@ -90,6 +90,10 @@
     <tr>
       <th>decision_data</th>
       <td><p>A clean decision data frame</p></td>
+    </tr>
+    <tr>
+      <th>na.rm</th>
+      <td><p>Should the mean measures exclude NAs (and thus return non-NA results?)</p></td>
     </tr>
     </table>
     
