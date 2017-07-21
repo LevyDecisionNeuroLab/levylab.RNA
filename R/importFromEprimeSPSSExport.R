@@ -11,9 +11,12 @@ importFromEprimeSPSSExport <- function(filename, choiceColumnName = 'choice', di
   choice_name <- paste0(quo_name(choiceColumnName), '.RESP')
 
   x <- read.delim(filename, skip = 1)
-  x <- mutate(x, payoff = ifelse(BlueValue == 0, RedValue, BlueValue),
+  x <- mutate(x, val = ifelse(BlueValue == 0, RedValue, BlueValue),
               refSide = ifelse(LotterySide == 'Left', 2, 1)) %>%
     rename(choice = !!choice_name) # FIXME: See rlang / "Programming with dplyr" vignette
+  # Get choice = chose lottery or not
+  x <- x %>% mutate(choicePress = choice, choice = ifelse(choice == 0, NA, choice != refSide))
+
   standard_cols <- getLevelsFromLotteryName(x$RiskAmbigLevel)
   ID <- as.numeric(str_match(filename, '\\d+')) # FIXME: Should attempt this, but fail gracefully
   standard_cols$ID <- ID
@@ -44,5 +47,5 @@ getLevelsFromLotteryName <- function(name) {
   p[ambig_trials] = 0.5
   a[ambig_trials] = level[ambig_trials] / 100
 
-  return(data.frame(winProb = p, ambiguity = a, winColor = winColor))
+  return(data.frame(p = p, al = a, winColor = winColor))
 }
